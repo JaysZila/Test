@@ -1,0 +1,5 @@
+[server]
+serverx.example.com
+
+[test]
+labx.example.com
