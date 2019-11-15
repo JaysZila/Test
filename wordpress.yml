@@ -1,0 +1,82 @@
+---
+- name: Setup Wordpress
+  hosts: server
+  remote_user: root
+  gather_facts: false
+
+  tasks:
+   - name: install dependencies packages
+     yum: 
+      name:
+       - mariadb
+       - mariadb-server
+       - php
+       - php-common
+       - php-mysql
+       - php-gd
+       - php-xml
+       - php-mbstring
+       - php-mcrypt
+       - php-xmlrpc
+       - unzip
+       - wget
+      state: present
+   
+   - name: start and enable httpd service
+     service: 
+      name: httpd
+      state: started
+      enabled: yes
+ 
+   - name: start and enable mariadb service
+     service:
+      name: mariadb
+      state: started
+      enabled: yes
+ 
+   - name: manage firewall add http service
+     firewalld:
+      service: http
+      permanent: yes
+      immediate: yes
+      state: enabled
+   
+   - name: curl wordpress 
+     get_url: 
+      url: https://wordpress.org/wordpress-5.0.tar.gz
+      dest: /home/centos
+   
+   - name: expressed wordpress file
+     unarchive:
+      src: /home/centos/wordpress-5.0.tar.gz
+      dest: /var/www/html/
+      remote_src: yes
+   
+   - name: manage file permission
+     file: 
+      path: /var/www/html/wordpress
+      owner: apache
+      group: apache
+      mode: '0755'
+     
+   - name: make uploads dir
+     file: 
+      path: /var/www/html/wordpress/wp-content/uploads
+      state: directory
+      recurse: yes
+   
+   - name: change group to apache
+     file:
+      path: /var/www/html/wordpress/wp-content/uploads
+      group: apache
+
+   - name: move directory
+     shell:
+       cmd: mv /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+
+   - name: copy config
+     copy:
+      src: ./wp-config.php
+      dest: /var/www/html/wordpress/wp-config.php
+      
+      
