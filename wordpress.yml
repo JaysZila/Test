@@ -3,13 +3,31 @@
   hosts: server
   remote_user: root
   gather_facts: false
+  become: yes
+  become_method: sudo
 
   tasks:
    - name: install dependencies packages
      yum: 
       name:
+       - httpd
+       - unzip
+       - wget
+       - epel-release
+       - python
+       - MySQL-python
+      state: present
+   
+   - name: install mariadb
+     yum :
+      name:
        - mariadb
        - mariadb-server
+      state: present
+
+   - name: install php
+     yum: 
+      name:
        - php
        - php-common
        - php-mysql
@@ -18,10 +36,8 @@
        - php-mbstring
        - php-mcrypt
        - php-xmlrpc
-       - unzip
-       - wget
       state: present
-   
+     
    - name: start and enable httpd service
      service: 
       name: httpd
@@ -40,13 +56,64 @@
       permanent: yes
       immediate: yes
       state: enabled
+
+   - name: check config
+     shell: mysql -u root -e 'exit'
+     register: check
+     ignore_errors: yes
    
-   - name: curl wordpress 
+   - name: create new database
+     block:
+      - name: delete user
+        mysql_user:
+         name: ''
+         login_host: localhost
+         login_user: root
+         host_all: yes
+         state: absent
+      - name: revoke access 
+        shell: mysql -u root -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
+      - name: drop test database
+        mysql_db:
+         name: test
+         login_host: localhost
+         login_user: root
+         state: absent
+      - name: revoke privileges of test user
+        shell: mysql -u root -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%';"
+      - name: reload grant table
+        shell: mysql -u root -e "Flush privileges;"
+      - name: update root password
+        mysql_user:
+         name: root
+         password: "{{ db_root_password }}"
+         host_all: yes
+     when: check.rc == 0
+     
+   - name: create wordpress database
+     mysql_db:
+      login_host: localhost
+      login_user: root
+      login_password: "{{ db_root_password }}"
+      name: "{{ db_name }}"
+      state: present
+ 
+   - name: create user ansible
+     mysql_user:
+      login_host: localhost
+      login_user: root
+      login_password: "{{ db_root_password }}"
+      name: "{{ db_username }}"
+      password: "{{ db_password }}"
+      priv: '{{ db_name }}.*:ALL'
+      state: present
+   
+   - name: curl wordpress site
      get_url: 
       url: https://wordpress.org/wordpress-5.0.tar.gz
       dest: /home/centos
    
-   - name: expressed wordpress file
+   - name: extract wordpress zip file
      unarchive:
       src: /home/centos/wordpress-5.0.tar.gz
       dest: /var/www/html/
@@ -59,24 +126,37 @@
       group: apache
       mode: '0755'
      
-   - name: make uploads dir
+   - name: make uploads directory
      file: 
       path: /var/www/html/wordpress/wp-content/uploads
       state: directory
       recurse: yes
-   
-   - name: change group to apache
-     file:
-      path: /var/www/html/wordpress/wp-content/uploads
       group: apache
-
-   - name: move directory
-     shell:
-       cmd: mv /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
-
-   - name: copy config
+   
+   - name: copy config file 
      copy:
-      src: ./wp-config.php
-      dest: /var/www/html/wordpress/wp-config.php
-      
-      
+        src: /var/www/html/wordpress/wp-config-sample.php
+        dest: /var/www/html/wordpress/wp-config.php
+        mode: preserve
+        owner: apache
+        group: apache
+        remote_src: yes
+
+   - name: Change default configuration
+     lineinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+     loop:
+        - { 
+            regexp: ^define\('DB_NAME', line: "define('DB_NAME', '{{ db_name }}');" 
+          }
+        - { 
+            regexp: ^define\('DB_USER', line: "define('DB_USER', '{{ db_username }}');" 
+          }
+        - { 
+            regexp: ^define\('DB_PASSWORD', line: "define('DB_PASSWORD', '{{ db_password }}');" 
+          }
+        - { 
+            regexp: ^define\('DB_HOST', line: "define('DB_HOST', '{{ db_host }}');" 
+          }

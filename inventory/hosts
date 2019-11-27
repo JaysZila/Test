@@ -1,5 +1,15 @@
 [server]
-serverx.example.com
+serverx.example.com 
 
 [test]
 labx.example.com
+
+[server:vars]
+ansible_password= centos
+ansible_become_pass= "{{ ansible_password }}"
+ansible_user= centos
+db_name= wordpress
+db_username= ansible
+db_password= mypassword
+db_root_password= abc
+db_host= localhost
